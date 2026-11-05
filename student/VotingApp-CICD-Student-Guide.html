@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voting App CI/CD Lab – Docker Compose + Docker Desktop Kubernetes</title>
+<style>
+:root{--bg:#0b1220;--panel:#121d30;--panel2:#17253b;--text:#e8eef8;--muted:#a8b6ca;--line:#2b3b54;--blue:#60a5fa;--green:#34d399;--amber:#fbbf24;--red:#fb7185}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:linear-gradient(135deg,#09111e,#101c2f 55%,#0b1220);color:var(--text);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:52px max(22px,calc((100vw - 1120px)/2));border-bottom:1px solid var(--line);background:radial-gradient(circle at 85% 15%,#1d4165 0,transparent 34%),linear-gradient(120deg,#101d31,#0c1525)}
+.kicker{color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.14em;font-size:.78rem}h1{font-size:clamp(2.1rem,6vw,4.3rem);line-height:1.05;margin:.5rem 0 1rem;max-width:900px}.lead{font-size:1.12rem;color:var(--muted);max-width:850px}.pills{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}.pill{border:1px solid var(--line);background:#14243a;border-radius:999px;padding:5px 12px;font-size:.85rem}
+.wrap{max-width:1120px;margin:auto;padding:26px 22px 60px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:26px}nav{position:sticky;top:14px;align-self:start;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px;max-height:calc(100vh - 28px);overflow:auto}nav b{display:block;margin-bottom:8px}nav a{display:block;color:var(--muted);text-decoration:none;padding:5px 7px;border-radius:7px;font-size:.9rem}nav a:hover{background:var(--panel2);color:white}main{min-width:0}section{margin:0 0 23px;background:rgba(18,29,48,.9);border:1px solid var(--line);border-radius:15px;padding:23px;scroll-margin-top:16px}h2{font-size:1.5rem;margin:0 0 12px}h3{font-size:1.1rem;color:#cfe2ff;margin:20px 0 7px}p{color:#d1dbea}.muted,small{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.card{background:var(--panel2);border:1px solid var(--line);padding:13px;border-radius:11px}.card b{display:block}.ok{color:var(--green)}.warn{color:var(--amber)}.flow{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.node{flex:1 1 130px;background:#182b43;border:1px solid #36516e;border-radius:10px;padding:13px;text-align:center}
+svg{width:100%;height:auto;background:#0d192a;border:1px solid var(--line);border-radius:12px;margin:12px 0}pre{overflow:auto;background:#07101c;border:1px solid #25364e;border-radius:10px;padding:14px;color:#d7e7fa;font-size:.86rem;line-height:1.5}code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}button.copy{float:right;border:1px solid #49617e;background:#1b304b;color:#dceaff;border-radius:7px;padding:3px 8px;cursor:pointer}table{border-collapse:collapse;width:100%;margin:10px 0;font-size:.93rem}td,th{border-bottom:1px solid var(--line);padding:9px;text-align:left;vertical-align:top}th{color:#bcd8fa}.callout{border-left:4px solid var(--blue);background:#10233a;padding:12px 15px;border-radius:7px;margin:13px 0}.success{border-color:var(--green)}.danger{border-color:var(--red)}details{background:#101d30;border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin:9px 0}summary{cursor:pointer;font-weight:650}.checklist label{display:block;margin:8px 0}.checklist input{accent-color:var(--green);margin-right:8px}footer{max-width:1120px;margin:auto;padding:0 22px 35px;color:var(--muted)}
+@media(max-width:850px){.wrap{grid-template-columns:1fr}nav{position:relative;max-height:none}.grid{grid-template-columns:1fr}}
+</style>
+<script>function cp(b){let c=b.parentElement.querySelector('code');navigator.clipboard.writeText(c.innerText).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1000)}).catch(()=>b.textContent='Select text')}</script>
+</head><body>
+<header><div class="kicker">Hands-on DevOps classroom lab</div><h1>End-to-End CI/CD with Jenkins, SonarQube, Docker & Kubernetes</h1>
+<p class="lead">A visual-first training reference for the Voting App using Docker Compose for CI tools and your existing Docker Desktop-managed, Kind-provisioned Kubernetes cluster.</p>
+<div class="pills"><span class="pill">Mac mini · ARM64</span><span class="pill">Docker Desktop</span><span class="pill">Kubernetes v1.36.1</span><span class="pill">2 nodes</span><span class="pill">Offline-ready HTML</span></div></header>
+<div class="wrap"><nav><b>Contents</b>
+<a href="#env">1. Verified environment</a><a href="#architecture">2. Architecture</a><a href="#prereq">3. Prerequisites</a><a href="#start">4. Start Compose</a><a href="#jenkins">5. Jenkins setup</a><a href="#sonar">6. SonarQube setup</a><a href="#pipeline">7. Pipeline stages</a><a href="#images">8. Image delivery</a><a href="#k8s">9. Kubernetes</a><a href="#access">10. Access app</a><a href="#trouble">11. Troubleshooting</a><a href="#exercises">12. Exercises</a><a href="#trainer">13. Trainer script</a></nav>
+<main>
+<section id="env"><h2>1. Your verified environment</h2><div class="grid">
+<div class="card"><b>kubectl context</b><code>docker-desktop</code></div><div class="card"><b>Kubernetes version</b><code>v1.36.1</code></div>
+<div class="card"><b>Control plane</b><code>desktop-control-plane</code><small>172.19.0.4 · Ready</small></div><div class="card"><b>Worker</b><code>desktop-worker</code><small>172.19.0.5 · Ready</small></div>
+<div class="card"><b>Runtime</b><code>containerd 2.3.1</code></div><div class="card"><b>Architecture</b><code>ARM64</code></div></div>
+<div class="callout success"><b>Confirmed:</b> We reuse this existing cluster. No cluster creation, reset, upgrade or deletion is performed. Context is <code>docker-desktop</code>.</div>
+<p>Docker Desktop manages the Kind-provisioned cluster. Do not assume it is identical to a cluster created with <code>kind create cluster</code>.</p></section>
+<section id="architecture"><h2>2. End-to-end architecture</h2>
+<svg viewBox="0 0 900 430" role="img" aria-label="CI CD architecture">
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L0 6 L8 3z" fill="#7fb6ff"/></marker></defs>
+<rect x="15" y="15" width="870" height="400" rx="17" fill="#101d30" stroke="#38506d"/><text x="38" y="45" fill="#8de0c1" font-size="16">Docker Desktop · Mac mini ARM64</text>
+<rect x="40" y="70" width="160" height="62" rx="9" fill="#203a58" stroke="#5b91c4"/><text x="120" y="96" fill="white" text-anchor="middle">GitHub</text><text x="120" y="116" fill="#c5d8ed" text-anchor="middle" font-size="11">Voting source</text>
+<rect x="250" y="70" width="160" height="62" rx="9" fill="#203a58" stroke="#5b91c4"/><text x="330" y="96" fill="white" text-anchor="middle">Jenkins</text><text x="330" y="116" fill="#c5d8ed" text-anchor="middle" font-size="11">Pipeline</text>
+<rect x="460" y="70" width="160" height="62" rx="9" fill="#203a58" stroke="#5b91c4"/><text x="540" y="96" fill="white" text-anchor="middle">SonarQube</text><text x="540" y="116" fill="#c5d8ed" text-anchor="middle" font-size="11">Quality gate</text>
+<rect x="670" y="70" width="175" height="62" rx="9" fill="#203a58" stroke="#5b91c4"/><text x="757" y="96" fill="white" text-anchor="middle">PostgreSQL</text><text x="757" y="116" fill="#c5d8ed" text-anchor="middle" font-size="11">Sonar database</text>
+<path d="M200 101H248 M410 101H458 M620 101H668" stroke="#7fb6ff" stroke-width="2" marker-end="url(#a)"/>
+<rect x="250" y="165" width="370" height="48" rx="9" fill="#243b51" stroke="#5b91c4"/><text x="435" y="194" fill="white" text-anchor="middle" font-size="14">Build Vote / Result / Worker ARM64 images</text><path d="M330 132V163" stroke="#7fb6ff" stroke-width="2" marker-end="url(#a)"/>
+<rect x="250" y="235" width="370" height="48" rx="9" fill="#243b51" stroke="#5b91c4"/><text x="435" y="264" fill="white" text-anchor="middle" font-size="14">docker save → ctr import into both nodes</text><path d="M435 213V233" stroke="#7fb6ff" stroke-width="2" marker-end="url(#a)"/>
+<rect x="40" y="315" width="805" height="78" rx="12" fill="#102b2c" stroke="#319b7c"/><text x="60" y="340" fill="#8de0c1" font-size="14">Existing Kubernetes · context docker-desktop</text>
+<text x="70" y="370" fill="white" font-size="13">desktop-control-plane</text><text x="330" y="370" fill="white" font-size="13">desktop-worker</text><text x="565" y="370" fill="white" font-size="13">votingapp: Vote · Result · Worker · Redis · DB</text><path d="M435 283V313" stroke="#7fb6ff" stroke-width="2" marker-end="url(#a)"/>
+</svg>
+<div class="grid"><div class="card"><b>Compose</b>Jenkins, SonarQube, Sonar PostgreSQL.</div><div class="card"><b>Jenkins</b>Checkout, scan, build, import and deploy.</div><div class="card"><b>Containerd import</b>Places images into each Kubernetes node.</div><div class="card"><b>Kubernetes</b>Runs app deployments and services.</div></div></section>
+<section id="prereq"><h2>3. Prerequisites and safety</h2><p>Recommended: 16 GB RAM allocated to Docker Desktop, 4 CPU cores and 20 GB free disk.</p>
+<pre><button class="copy" onclick="cp(this)">Copy</button><code>kubectl config current-context
+kubectl get nodes -o wide
+docker version
+docker compose version
+docker ps -a --format 'table {{.Names}}\\t{{.Image}}\\t{{.Status}}'</code></pre>
+<p>Both nodes should be Ready. Enable Docker Desktop → Kubernetes → <b>Show system containers (advanced)</b> if necessary so Docker CLI can see the node containers.</p>
+<div class="callout danger"><b>Security:</b> Jenkins mounts the Docker socket and has a kubeconfig. Jobs can control Docker and access the cluster. Keep Jenkins local, do not expose it publicly and do not run untrusted pipelines.</div></section>
+<section id="start"><h2>4. Start the Compose tools</h2>
+<pre><button class="copy" onclick="cp(this)">Copy</button><code>cp .env.example .env
+# Edit .env and set a strong SONAR_DB_PASSWORD
+./scripts/prepare.sh
+./scripts/setup.sh</code></pre>
+<p>Preflight selects <code>docker-desktop</code>, writes a flattened kubeconfig with embedded certificates and verifies node-container visibility. It does not deploy Kubernetes resources.</p>
+<table><tr><th>Tool</th><th>URL</th><th>Purpose</th></tr><tr><td>Jenkins</td><td>http://localhost:8080</td><td>Pipeline</td></tr><tr><td>SonarQube</td><td>http://localhost:9000</td><td>Code quality</td></tr><tr><td>PostgreSQL</td><td>Internal</td><td>Sonar data</td></tr></table>
+<pre><button class="copy" onclick="cp(this)">Copy</button><code>docker compose ps
+docker compose logs -f jenkins
+docker compose logs -f sonarqube
+./scripts/jenkins-password.sh</code></pre></section>
+<section id="jenkins"><h2>5. Jenkins setup</h2><ol><li>Open Jenkins at port 8080.</li><li>Retrieve unlock password with <code>./scripts/jenkins-password.sh</code>.</li><li>Complete setup wizard and install suggested plugins.</li><li>Create Pipeline job <code>votingapp-cicd</code>.</li><li>Choose Pipeline script from SCM → Git → your project repository.</li><li>Set Script Path to <code>jenkins/Jenkinsfile</code>.</li><li>Save.</li></ol>
+<p>Verify connectivity:</p><pre><button class="copy" onclick="cp(this)">Copy</button><code>./scripts/check-jenkins-k8s.sh</code></pre></section>
+<section id="sonar"><h2>6. SonarQube setup</h2><ol><li>Open SonarQube port 9000.</li><li>Fresh install: <code>admin/admin</code>; change the password.</li><li>Create project key <code>voting-app-training</code>.</li><li>Generate a user token.</li><li>Jenkins → Credentials → add Secret text credential with ID <code>sonarqube-token</code>.</li></ol><p>Scanner uses <code>sonar.qualitygate.wait=true</code> so it waits for the quality gate. No webhook is needed in this pipeline.</p></section>
+<section id="pipeline"><h2>7. Pipeline stages</h2><table><tr><th>Stage</th><th>Action</th><th>Concept</th></tr><tr><td>Connectivity</td><td>Docker, context, node check</td><td>Fail fast</td></tr><tr><td>Checkout</td><td>Clone Git source</td><td>SCM</td></tr><tr><td>Validation</td><td>Check app folders and Dockerfiles</td><td>Pre-build validation</td></tr><tr><td>SonarQube</td><td>Analyze Vote and Result</td><td>Quality gate</td></tr><tr><td>Build</td><td>Build ARM64 images</td><td>Docker build/tag</td></tr><tr><td>Import</td><td>Load into both node containerd stores</td><td>Image distribution</td></tr><tr><td>Deploy</td><td>Apply YAML and wait for rollouts</td><td>Kubernetes CD</td></tr></table>
+<p>Build with parameters: repository <code>https://github.com/dockersamples/example-voting-app.git</code>, branch <code>main</code>, context <code>docker-desktop</code>, deployment enabled. Optional JFrog: add a Jenkins Username/password credential with ID <code>jfrog-docker</code> (password is a JFrog access token), check <code>PUBLISH_TO_JFROG</code>, and enter the registry path such as <code>company.jfrog.io/docker-local</code>.</p></section>
+<section id="images"><h2>8. Why import images into both nodes?</h2><p>Docker builds images in the Docker daemon. Kubernetes nodes use containerd. They are separate image stores, so a locally built image is not automatically available to the cluster.</p>
+<div class="flow"><div class="node"><b>Docker build</b><small>voting-vote:tag</small></div><div class="node"><b>docker save</b><small>Image archive stream</small></div><div class="node"><b>ctr import</b><small>Control plane</small></div><div class="node"><b>ctr import</b><small>Worker</small></div></div>
+<pre><button class="copy" onclick="cp(this)">Copy</button><code>docker exec desktop-control-plane ctr -n k8s.io images ls
+docker exec desktop-worker ctr -n k8s.io images ls</code></pre>
+<div class="callout warn">This method requires node containers to be visible to Docker CLI and <code>ctr</code> to be present inside each node. The project preflight checks visibility; the connectivity helper checks ctr. If unavailable, use a registry reachable by the cluster instead. Do not reset your cluster.</div></section>
+<section id="k8s"><h2>9. Kubernetes resources</h2><table><tr><th>Resource</th><th>Role</th></tr><tr><td>Namespace votingapp</td><td>Isolation</td></tr><tr><td>db</td><td>Voting PostgreSQL</td></tr><tr><td>redis</td><td>Vote queue</td></tr><tr><td>vote</td><td>Vote UI · 2 replicas</td></tr><tr><td>result</td><td>Result UI</td></tr><tr><td>worker</td><td>Processes votes</td></tr><tr><td>Services</td><td>Stable internal networking</td></tr></table>
+<pre><button class="copy" onclick="cp(this)">Copy</button><code>kubectl get all -n votingapp
+kubectl get pods -o wide -n votingapp
+kubectl describe deployment vote -n votingapp
+kubectl rollout history deployment/vote -n votingapp
+kubectl get events -n votingapp --sort-by=.lastTimestamp</code></pre></section>
+<section id="access"><h2>10. Access Vote and Result</h2><p>Vote UI:</p><pre><button class="copy" onclick="cp(this)">Copy</button><code>kubectl port-forward -n votingapp svc/voting-service 8081:80</code></pre><p><a href="http://localhost:8081" target="_blank">http://localhost:8081</a></p><p>Result UI in a second terminal:</p><pre><button class="copy" onclick="cp(this)">Copy</button><code>kubectl port-forward -n votingapp svc/result-service 8082:80</code></pre><p><a href="http://localhost:8082" target="_blank">http://localhost:8082</a></p></section>
+<section id="trouble"><h2>11. Troubleshooting</h2>
+<details><summary>Jenkins cannot connect to Kubernetes API</summary><pre><code>kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}{"\\n"}'
+docker exec voting-jenkins kubectl config current-context
+docker exec voting-jenkins kubectl get nodes</code></pre><p>API endpoint must be reachable from Jenkins and TLS certificate validation must succeed. Do not disable TLS verification.</p></details>
+<details><summary>Docker cannot inspect node containers</summary><p>Enable Show system containers (advanced), then:</p><pre><code>docker ps -a | grep -E 'desktop-control-plane|desktop-worker'
+docker inspect desktop-control-plane</code></pre></details>
+<details><summary>ctr missing in node</summary><pre><code>docker exec desktop-control-plane ctr version
+docker exec desktop-worker ctr version</code></pre><p>If unavailable, switch to a cluster-reachable registry delivery method; do not reset the cluster.</p></details>
+<details><summary>ErrImageNeverPull</summary><pre><code>kubectl describe pod -n votingapp &lt;pod-name&gt;
+docker exec desktop-control-plane ctr -n k8s.io images ls | grep voting-
+docker exec desktop-worker ctr -n k8s.io images ls | grep voting-</code></pre><p>Exact image tags must exist in both nodes.</p></details>
+<details><summary>SonarQube is slow or unhealthy</summary><pre><code>docker compose logs -f sonarqube
+docker compose logs -f sonardb</code></pre><p>Increase Docker Desktop memory allocation if needed.</p></details></section>
+<section id="exercises"><h2>12. Student exercises</h2><div class="checklist">
+<label><input type="checkbox"> Verify current context and two Ready nodes.</label><label><input type="checkbox"> Start Compose services.</label><label><input type="checkbox"> Create Sonar project and Jenkins token.</label><label><input type="checkbox"> Run complete Jenkins pipeline.</label><label><input type="checkbox"> Observe pod placement across both nodes.</label><label><input type="checkbox"> Scale Vote from 2 to 3 replicas.</label><label><input type="checkbox"> Deploy a bad image tag and inspect events.</label><label><input type="checkbox"> Run a second build and compare tags.</label><label><input type="checkbox"> Roll back a Deployment.</label></div>
+<pre><button class="copy" onclick="cp(this)">Copy</button><code>kubectl scale deployment/vote --replicas=3 -n votingapp
+kubectl rollout status deployment/vote -n votingapp
+kubectl rollout undo deployment/vote -n votingapp
+kubectl get pods -o wide -n votingapp
+kubectl logs deployment/worker -n votingapp</code></pre></section>
+<section id="trainer"><h2>13. Trainer speaking script</h2><h3>Opening</h3><p>“Jenkins orchestrates the delivery. SonarQube checks source quality. Docker builds images. Kubernetes runs the application.”</p><h3>Critical concept</h3><p>“A Docker image in the Docker daemon is not automatically present in the containerd store used by Kubernetes nodes. Our pipeline transfers each image to both nodes before deployment.”</p><h3>Production extension</h3><p>“In production we would add a secured registry such as JFrog, secret management, persistent storage, ingress, resource limits, approvals and a hardened CI server.”</p><div class="callout success"><b>Completion criteria:</b> Pipeline succeeds, quality gate passes, app pods become Ready, and Vote and Result UIs respond through port-forward.</div></section>
+</main></div><footer>Voting App CI/CD Training Lab · Local classroom use · Review upstream source and Dockerfiles before reuse. Self-contained HTML; no external assets required.</footer>
+</body></html>
