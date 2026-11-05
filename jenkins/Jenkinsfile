@@ -1,130 +1,376 @@
 pipeline {
-  agent any
-  options { timestamps(); disableConcurrentBuilds(); timeout(time: 50, unit: 'MINUTES') }
-  parameters {
-    string(name: 'APP_SOURCE_REPO', defaultValue: 'https://github.com/dockersamples/example-voting-app.git', description: 'Voting App Git URL')
-    string(name: 'APP_BRANCH', defaultValue: 'main', description: 'Source branch')
-    choice(name: 'K8S_CONTEXT', choices: ['docker-desktop'], description: 'Existing Docker Desktop context')
-    booleanParam(name: 'DEPLOY_TO_K8S', defaultValue: true, description: 'Deploy to existing cluster')
-    booleanParam(name: 'PUBLISH_TO_JFROG', defaultValue: false, description: 'Also publish images to JFrog Artifactory')
-    string(name: 'JFROG_REGISTRY', defaultValue: '', description: 'Optional registry path, e.g. company.jfrog.io/docker-local')
-  }
-  environment {
-    SONAR_HOST_URL = 'http://sonarqube:9000'
-    K8S_NAMESPACE = 'votingapp'
-    IMAGE_TAG = "build-${BUILD_NUMBER}"
-  }
-  stages {
-    stage('Verify connectivity') {
-      steps {
-        sh '''
-          set -eu
-          docker version
-          test "$(kubectl config current-context)" = "$K8S_CONTEXT"
-          kubectl get nodes -o wide
-        '''
-      }
-    }
-    stage('Checkout') {
-      steps { dir('app') { git branch: params.APP_BRANCH, url: params.APP_SOURCE_REPO } }
-    }
-    stage('Validate source') {
-      steps {
-        sh '''
-          set -eu
-          for d in vote result worker; do
-            test -d "app/$d" && test -f "app/$d/Dockerfile"
-          done
-        '''
-      }
-    }
-    stage('SonarQube analysis and quality gate') {
-      steps {
-        withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
-          sh '''
-            set -eu
-            sonar-scanner -Dsonar.host.url="$SONAR_HOST_URL"               -Dsonar.token="$SONAR_TOKEN"               -Dsonar.projectKey=voting-app-training               -Dsonar.projectName="Voting App Training"               -Dsonar.sources=app/vote,app/result               -Dsonar.exclusions="**/node_modules/**,**/vendor/**"               -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
-          '''
-        }
-      }
-    }
-    stage('Build ARM64 images') {
-      steps {
-        sh '''
-          set -eu
-          docker build --platform linux/arm64 -t voting-vote:$IMAGE_TAG app/vote
-          docker build --platform linux/arm64 -t voting-result:$IMAGE_TAG app/result
-          docker build --platform linux/arm64 -t voting-worker:$IMAGE_TAG app/worker
-        '''
-      }
-    }
-    stage('Publish images to JFrog (optional)') {
-      when { expression { return params.PUBLISH_TO_JFROG } }
-      steps {
-        script {
-          if (!params.JFROG_REGISTRY?.trim()) {
-            error('Set JFROG_REGISTRY, for example company.jfrog.io/docker-local')
-          }
-        }
-        withCredentials([usernamePassword(credentialsId: 'jfrog-docker',
-                         usernameVariable: 'JFROG_USER', passwordVariable: 'JFROG_TOKEN')]) {
-          sh '''
-            set -eu
-            JFROG_HOST="${JFROG_REGISTRY%%/*}"
-            echo "$JFROG_TOKEN" | docker login "$JFROG_HOST" --username "$JFROG_USER" --password-stdin
-            for app in vote result worker; do
-              docker tag "voting-$app:$IMAGE_TAG" "$JFROG_REGISTRY/voting-$app:$IMAGE_TAG"
-              docker push "$JFROG_REGISTRY/voting-$app:$IMAGE_TAG"
-            done
-            docker logout "$JFROG_HOST"
-          '''
-        }
-      }
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 50, unit: 'MINUTES')
     }
 
-    stage('Import images into both Kubernetes nodes') {
-      when { expression { return params.DEPLOY_TO_K8S } }
-      steps {
-        sh '''
-          set -eu
-          test "$(kubectl config current-context)" = "$K8S_CONTEXT"
-          NODES="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}')"
-          [ -n "$NODES" ] || { echo "No Kubernetes nodes"; exit 2; }
-          TMP_DIR="$(mktemp -d)"
-          trap 'rm -rf "$TMP_DIR"' EXIT
-          for image in "voting-vote:$IMAGE_TAG" "voting-result:$IMAGE_TAG" "voting-worker:$IMAGE_TAG"; do
-            archive="$TMP_DIR/$(echo "$image" | tr ':/' '__').tar"
-            echo "Exporting $image"
-            docker save "$image" -o "$archive"
-            for node in $NODES; do
-              echo "Importing $image into $node"
-              docker exec -i "$node" ctr -n k8s.io images import - < "$archive"
-            done
-          done
-        '''
-      }
+    parameters {
+        string(
+            name: 'APP_SOURCE_REPO',
+            defaultValue: 'https://github.com/dockersamples/example-voting-app.git',
+            description: 'Voting App Git URL'
+        )
+
+        string(
+            name: 'APP_BRANCH',
+            defaultValue: 'main',
+            description: 'Source branch'
+        )
+
+        choice(
+            name: 'K8S_CONTEXT',
+            choices: ['docker-desktop'],
+            description: 'Existing Docker Desktop context'
+        )
+
+        booleanParam(
+            name: 'DEPLOY_TO_K8S',
+            defaultValue: true,
+            description: 'Deploy to existing cluster'
+        )
+
+        booleanParam(
+            name: 'PUBLISH_TO_JFROG',
+            defaultValue: false,
+            description: 'Also publish images to JFrog Artifactory'
+        )
+
+        string(
+            name: 'JFROG_REGISTRY',
+            defaultValue: '',
+            description: 'Optional registry path, e.g. company.jfrog.io/docker-local'
+        )
     }
-    stage('Deploy') {
-      when { expression { return params.DEPLOY_TO_K8S } }
-      steps {
-        sh '''
-          set -eu
-          kubectl apply -f /workspace/kubernetes/00-namespace.yaml
-          kubectl apply -n "$K8S_NAMESPACE" -f /workspace/kubernetes/01-postgres.yaml
-          kubectl apply -n "$K8S_NAMESPACE" -f /workspace/kubernetes/02-redis.yaml
-          kubectl apply -n "$K8S_NAMESPACE" -f /workspace/kubernetes/03-vote.yaml
-          kubectl apply -n "$K8S_NAMESPACE" -f /workspace/kubernetes/04-result.yaml
-          kubectl apply -n "$K8S_NAMESPACE" -f /workspace/kubernetes/05-worker.yaml
-          kubectl set image deployment/vote vote="voting-vote:$IMAGE_TAG" -n "$K8S_NAMESPACE"
-          kubectl set image deployment/result result="voting-result:$IMAGE_TAG" -n "$K8S_NAMESPACE"
-          kubectl set image deployment/worker worker="voting-worker:$IMAGE_TAG" -n "$K8S_NAMESPACE"
-          for d in db redis vote result worker; do
-            kubectl rollout status deployment/$d -n "$K8S_NAMESPACE" --timeout=180s
-          done
-          kubectl get pods,svc -n "$K8S_NAMESPACE" -o wide
-        '''
-      }
+
+    environment {
+        // IMPORTANT: Use the mounted Kubernetes configuration
+        KUBECONFIG = '/var/jenkins_home/.kube/config'
+
+        SONAR_HOST_URL = 'http://sonarqube:9000'
+        K8S_NAMESPACE = 'votingapp'
+        IMAGE_TAG = "build-${BUILD_NUMBER}"
     }
-  }
-  post { always { echo 'Pipeline finished. Review stages and SonarQube dashboard.' } }
+
+    stages {
+
+        stage('Verify connectivity') {
+            steps {
+                script {
+                    def expectedContext = params.K8S_CONTEXT?.trim()
+
+                    if (!expectedContext) {
+                        error('K8S_CONTEXT parameter is empty')
+                    }
+
+                    withEnv(["EXPECTED_K8S_CONTEXT=${expectedContext}"]) {
+                        sh '''
+                            set -eu
+
+                            echo "======================================"
+                            echo "1. Docker connectivity"
+                            echo "======================================"
+
+                            docker version
+
+                            echo "======================================"
+                            echo "2. Kubernetes configuration"
+                            echo "======================================"
+
+                            echo "Kubeconfig: $KUBECONFIG"
+
+                            test -r "$KUBECONFIG"
+
+                            ACTUAL_CONTEXT=$(kubectl config current-context)
+
+                            echo "Expected context: $EXPECTED_K8S_CONTEXT"
+                            echo "Actual context:   $ACTUAL_CONTEXT"
+
+                            if [ "$ACTUAL_CONTEXT" != "$EXPECTED_K8S_CONTEXT" ]; then
+                                echo "ERROR: Kubernetes context mismatch"
+                                exit 1
+                            fi
+
+                            echo "======================================"
+                            echo "3. Kubernetes node connectivity"
+                            echo "======================================"
+
+                            kubectl get nodes -o wide
+
+                            echo "Kubernetes connectivity successful"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                dir('app') {
+                    git branch: params.APP_BRANCH,
+                        url: params.APP_SOURCE_REPO
+                }
+            }
+        }
+
+        stage('Validate source') {
+            steps {
+                sh '''
+                    set -eu
+
+                    echo "Validating Voting App source"
+
+                    for d in vote result worker; do
+                        test -d "app/$d"
+                        test -f "app/$d/Dockerfile"
+                    done
+
+                    echo "Source validation successful"
+                '''
+            }
+        }
+
+        stage('SonarQube analysis and quality gate') {
+            steps {
+                withCredentials([
+                    string(
+                        credentialsId: 'sonarqube-token',
+                        variable: 'SONAR_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+
+                        sonar-scanner \
+                          -Dsonar.host.url="$SONAR_HOST_URL" \
+                          -Dsonar.token="$SONAR_TOKEN" \
+                          -Dsonar.projectKey=voting-app-training \
+                          -Dsonar.projectName="Voting App Training" \
+                          -Dsonar.sources=app/vote,app/result \
+                          -Dsonar.exclusions="**/node_modules/**,**/vendor/**" \
+                          -Dsonar.qualitygate.wait=true \
+                          -Dsonar.qualitygate.timeout=300
+                    '''
+                }
+            }
+        }
+
+        stage('Build ARM64 images') {
+            steps {
+                sh '''
+                    set -eu
+
+                    echo "Building ARM64 application images"
+
+                    docker build \
+                      --platform linux/arm64 \
+                      -t voting-vote:$IMAGE_TAG \
+                      app/vote
+
+                    docker build \
+                      --platform linux/arm64 \
+                      -t voting-result:$IMAGE_TAG \
+                      app/result
+
+                    docker build \
+                      --platform linux/arm64 \
+                      -t voting-worker:$IMAGE_TAG \
+                      app/worker
+
+                    echo "Docker image builds completed"
+
+                    docker images | grep voting-
+                '''
+            }
+        }
+
+        stage('Publish images to JFrog (optional)') {
+            when {
+                expression {
+                    return params.PUBLISH_TO_JFROG
+                }
+            }
+
+            steps {
+                script {
+                    if (!params.JFROG_REGISTRY?.trim()) {
+                        error(
+                            'Set JFROG_REGISTRY, for example company.jfrog.io/docker-local'
+                        )
+                    }
+                }
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'jfrog-docker',
+                        usernameVariable: 'JFROG_USER',
+                        passwordVariable: 'JFROG_TOKEN'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+
+                        JFROG_HOST="${JFROG_REGISTRY%%/*}"
+
+                        echo "$JFROG_TOKEN" | docker login \
+                          "$JFROG_HOST" \
+                          --username "$JFROG_USER" \
+                          --password-stdin
+
+                        for app in vote result worker; do
+
+                            docker tag \
+                              "voting-$app:$IMAGE_TAG" \
+                              "$JFROG_REGISTRY/voting-$app:$IMAGE_TAG"
+
+                            docker push \
+                              "$JFROG_REGISTRY/voting-$app:$IMAGE_TAG"
+
+                        done
+
+                        docker logout "$JFROG_HOST"
+                    '''
+                }
+            }
+        }
+
+        stage('Import images into both Kubernetes nodes') {
+            when {
+                expression {
+                    return params.DEPLOY_TO_K8S
+                }
+            }
+
+            steps {
+                script {
+                    withEnv(["EXPECTED_K8S_CONTEXT=${params.K8S_CONTEXT}"]) {
+                        sh '''
+                            set -eu
+
+                            test "$(kubectl config current-context)" = "$EXPECTED_K8S_CONTEXT"
+
+                            NODES="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}')"
+
+                            [ -n "$NODES" ] || {
+                                echo "No Kubernetes nodes found"
+                                exit 2
+                            }
+
+                            TMP_DIR="$(mktemp -d)"
+
+                            trap 'rm -rf "$TMP_DIR"' EXIT
+
+                            for image in \
+                                "voting-vote:$IMAGE_TAG" \
+                                "voting-result:$IMAGE_TAG" \
+                                "voting-worker:$IMAGE_TAG"; do
+
+                                archive="$TMP_DIR/$(echo "$image" | tr ':/' '__').tar"
+
+                                echo "Exporting $image"
+
+                                docker save "$image" -o "$archive"
+
+                                for node in $NODES; do
+
+                                    echo "Importing $image into $node"
+
+                                    docker exec -i "$node" \
+                                      ctr -n k8s.io images import - < "$archive"
+
+                                done
+
+                            done
+
+                            echo "All images imported"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                expression {
+                    return params.DEPLOY_TO_K8S
+                }
+            }
+
+            steps {
+                sh '''
+                    set -eu
+
+                    echo "Deploying Voting App to Kubernetes"
+
+                    kubectl apply \
+                      -f /workspace/kubernetes/00-namespace.yaml
+
+                    kubectl apply \
+                      -n "$K8S_NAMESPACE" \
+                      -f /workspace/kubernetes/01-postgres.yaml
+
+                    kubectl apply \
+                      -n "$K8S_NAMESPACE" \
+                      -f /workspace/kubernetes/02-redis.yaml
+
+                    kubectl apply \
+                      -n "$K8S_NAMESPACE" \
+                      -f /workspace/kubernetes/03-vote.yaml
+
+                    kubectl apply \
+                      -n "$K8S_NAMESPACE" \
+                      -f /workspace/kubernetes/04-result.yaml
+
+                    kubectl apply \
+                      -n "$K8S_NAMESPACE" \
+                      -f /workspace/kubernetes/05-worker.yaml
+
+                    kubectl set image deployment/vote \
+                      vote="voting-vote:$IMAGE_TAG" \
+                      -n "$K8S_NAMESPACE"
+
+                    kubectl set image deployment/result \
+                      result="voting-result:$IMAGE_TAG" \
+                      -n "$K8S_NAMESPACE"
+
+                    kubectl set image deployment/worker \
+                      worker="voting-worker:$IMAGE_TAG" \
+                      -n "$K8S_NAMESPACE"
+
+                    echo "Waiting for deployments"
+
+                    for d in db redis vote result worker; do
+
+                        kubectl rollout status \
+                          deployment/$d \
+                          -n "$K8S_NAMESPACE" \
+                          --timeout=180s
+
+                    done
+
+                    echo "Final application resources"
+
+                    kubectl get pods,svc \
+                      -n "$K8S_NAMESPACE" \
+                      -o wide
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finished. Review stages and SonarQube dashboard.'
+        }
+
+        success {
+            echo 'Voting App CI/CD pipeline completed successfully!'
+        }
+
+        failure {
+            echo 'Pipeline failed. Check the failed stage and console output.'
+        }
+    }
 }
