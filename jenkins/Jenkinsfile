@@ -141,21 +141,21 @@ pipeline {
                 ]) {
                     sh '''
                         set +x
-        
+                    
                         echo "Checking SonarQube authentication..."
-        
-                        curl -sS \
+                    
+                        RESPONSE=$(curl -sS \
                           -u "$SONAR_TOKEN:" \
-                          "$SONAR_HOST_URL/api/authentication/validate" \
-                          -o /tmp/sonar-auth-response.json
-        
-                        echo "Authentication response:"
-        
-                        cat /tmp/sonar-auth-response.json
-        
-                        echo
-        
-                        rm -f /tmp/sonar-auth-response.json
+                          "$SONAR_HOST_URL/api/authentication/validate")
+                    
+                        echo "Authentication response: $RESPONSE"
+                    
+                        if echo "$RESPONSE" | grep -Eq '"valid"[[:space:]]*:[[:space:]]*true'; then
+                            echo "SonarQube token is valid"
+                        else
+                            echo "ERROR: SonarQube token is invalid"
+                            exit 1
+                        fi
                     '''
                 }
             }
