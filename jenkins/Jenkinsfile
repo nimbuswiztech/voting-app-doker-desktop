@@ -131,35 +131,7 @@ pipeline {
                 '''
             }
         }
-        stage('Test SonarQube Authentication') {
-            steps {
-                withCredentials([
-                    string(
-                        credentialsId: 'sonarqube-token',
-                        variable: 'SONAR_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set +x
-                    
-                        echo "Checking SonarQube authentication..."
-                    
-                        RESPONSE=$(curl -sS \
-                          -u "$SONAR_TOKEN:" \
-                          "$SONAR_HOST_URL/api/authentication/validate")
-                    
-                        echo "Authentication response: $RESPONSE"
-                    
-                        if echo "$RESPONSE" | grep -Eq '"valid"[[:space:]]*:[[:space:]]*true'; then
-                            echo "SonarQube token is valid"
-                        else
-                            echo "ERROR: SonarQube token is invalid"
-                            exit 1
-                        fi
-                    '''
-                }
-            }
-        }
+        
         stage('SonarQube analysis and quality gate') {
             steps {
                 withCredentials([
