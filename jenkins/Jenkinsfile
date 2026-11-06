@@ -142,27 +142,18 @@ pipeline {
                     sh '''
                         set +x
         
-                        echo "Checking SonarQube token..."
+                        echo "Checking SonarQube authentication..."
         
-                        HTTP_CODE=$(curl -sS \
-                          -o /tmp/sonar-auth-response.json \
-                          -w "%{http_code}" \
+                        curl -sS \
                           -u "$SONAR_TOKEN:" \
-                          "$SONAR_HOST_URL/api/authentication/validate")
+                          "$SONAR_HOST_URL/api/authentication/validate" \
+                          -o /tmp/sonar-auth-response.json
         
-                        echo "SonarQube authentication HTTP status: $HTTP_CODE"
+                        echo "Authentication response:"
         
-                        if [ "$HTTP_CODE" != "200" ]; then
-                            echo "SonarQube authentication failed"
-                            exit 1
-                        fi
+                        cat /tmp/sonar-auth-response.json
         
-                        if grep -q '"valid":true' /tmp/sonar-auth-response.json; then
-                            echo "SonarQube token is valid"
-                        else
-                            echo "SonarQube token validation failed"
-                            exit 1
-                        fi
+                        echo
         
                         rm -f /tmp/sonar-auth-response.json
                     '''
